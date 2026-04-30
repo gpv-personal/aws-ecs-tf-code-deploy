@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Project - Our House</title>
+    <link rel="stylesheet" href="../css/main.css">
+</head>
+<body>
+    <nav class="menu-bar">
+        <a href="/index.html">About</a>
+        <a href="/wallart.html">Wall Art</a>
+        <a href="/boardart.html">Board Art</a>
+        <a href="/contact.php">Contact</a>
+    </nav>
+    <div class="bannerourhouse">
+        <span style="position: relative; z-index: 1; font-weight: bold; color: white; font-size: 0.7em;">Our Home</span>
+    </div>
+    <div style="margin-left: 60px; margin-right:280px; margin-top:50px;">
+        <p class="main-text">
+            After decorating every room in a flat I only just moved into I still felt enthusiastic about painting some more. With lockdown in progress I started with sketching shapes of oversized Monstera plant leaves. Since I was being creative in my home, I was able to keep adding colours, flowers and other plants every day. After 5 months I completed the wall by gently sanding or scraping the background to add the texture.<br/><br/>
+            As I was working in the comfort of my home, I was able to work anytime I wished. Finding passion and satisfaction throughout, I then explored the possibility to create alternative images outside my home. I created my own stencils using my wall as a template, which allowed me to replicate the shapes more promptly.  Nagging my friends to provide me with a wall space, I moved onto my first outside project: “Tropical in Govanhill”.
+        </p>
+    </div>
+        <br/>
+        <div class="portfolio" style="display: flex; flex-wrap: wrap; gap: 50px; margin-left: 100px; margin-right: 300px;">
+            <!-- Add more portfolio items as needed -->
+            <img src="../images/Portfolio/OurHouse/OurHouse-13.jpg" alt="Our image 13" style="width:188px; height:188px; cursor:pointer; box-shadow:0 2px 8px #aaa;" onclick="openModal(this)">
+            <img src="../images/Portfolio/OurHouse/OurHouse-14.jpg" alt="Our image 14" style="width:188px; height:188px; cursor:pointer; box-shadow:0 2px 8px #aaa;" onclick="openModal(this)">
+            <img src="../images/Portfolio/OurHouse/OurHouse-20.jpg" alt="Our image 20" style="width:250px; height:188px; cursor:pointer; box-shadow:0 2px 8px #aaa;" onclick="openModal(this)">
+            <img src="../images/Portfolio/OurHouse/OurHouse-21.jpg" alt="Our image 21" style="width:250px; height:188px; cursor:pointer; box-shadow:0 2px 8px #aaa;" onclick="openModal(this)">
+            <img src="../images/Portfolio/OurHouse/OurHouse-24.jpg" alt="Our image 24" style="width:250px; height:188px; cursor:pointer; box-shadow:0 2px 8px #aaa;" onclick="openModal(this)">
+            <img src="../images/Portfolio/OurHouse/OurHouse-32.jpg" alt="Our image 32" style="width:250px; height:188px; cursor:pointer; box-shadow:0 2px 8px #aaa;" onclick="openModal(this)">
+            <img src="../images/Portfolio/OurHouse/OurHouse-26.jpg" alt="Our image 26" style="width:230px; height:188px; cursor:pointer; box-shadow:0 2px 8px #aaa;" onclick="openModal(this)">
+            <img src="../images/Portfolio/OurHouse/OurHouse-34.jpg" alt="Our image 34" style="width:250px; height:188px; cursor:pointer; box-shadow:0 2px 8px #aaa;" onclick="openModal(this)">
+
+            <!-- Modal for zoom -->
+            <div id="imgModal" style="display:none; position:fixed; z-index:9999; left:0; top:0; width:100vw; height:100vh; background:rgba(0,0,0,0.8); align-items:center; justify-content:center;">
+                <span style="position:absolute; top:30px; right:50px; color:white; font-size:2em; cursor:pointer;" onclick="closeModal()">&times;</span>
+                <img id="modalImg" src="" alt="" style="max-width:90vw; max-height:90vh; box-shadow:0 0 20px #000;">
+            </div>
+            <script>
+                function openModal(img) {
+                    document.getElementById('imgModal').style.display = 'flex';
+                    document.getElementById('modalImg').src = img.src;
+                    document.getElementById('modalImg').alt = img.alt;
+                }
+                function closeModal() {
+                    document.getElementById('imgModal').style.display = 'none';
+                }
+                // Optional: Close modal when clicking outside the image
+                document.getElementById('imgModal').addEventListener('click', function(e) {
+                    if (e.target === this) closeModal();
+                });
+            </script>
+        </div>
+    </div>
+</body>
+<footer class="footer">
+    &copy; WallArtbyKatka, 2025. All rights reserved.
+</footer>
+</html>
