@@ -51,3 +51,51 @@ variable "desired_count" {
   type        = number
   default     = 2
 }
+
+variable "codestar_connection_arn" {
+  description = "Existing CodeStar connection ARN for CodePipeline source. Leave empty to create one in Terraform."
+  type        = string
+  default     = ""
+}
+
+variable "codestar_connection_name" {
+  description = "Name for the CodeStar connection created by Terraform when codestar_connection_arn is empty"
+  type        = string
+  default     = "warwick-github-connection"
+}
+
+variable "repo_owner" {
+  description = "GitHub owner or organization for CodePipeline source"
+  type        = string
+  default     = "gpv-personal"
+}
+
+variable "repo_name" {
+  description = "GitHub repository name for CodePipeline source"
+  type        = string
+  default     = "aws-ecs-tf-code-deploy"
+}
+
+variable "repo_branch" {
+  description = "GitHub branch for CodePipeline source"
+  type        = string
+  default     = "main"
+}
+
+variable "codebuild_compute_type" {
+  description = "CodeBuild compute type for Terraform runs"
+  type        = string
+  default     = "BUILD_GENERAL1_SMALL"
+}
+
+variable "codebuild_image" {
+  description = "Docker image for CodeBuild environment"
+  type        = string
+  default     = "aws/codebuild/standard:7.0"
+}
+
+variable "terraform_state_key" {
+  description = "Object key used by the pipeline to persist Terraform state in S3"
+  type        = string
+  default     = "terraform/terraform.tfstate"
+}

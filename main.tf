@@ -12,6 +12,7 @@ locals {
   public_subnets = zipmap(local.azs, local.public_subnet_cidrs)
 
   container_name = "app"
+  repo_full_name = "${var.repo_owner}/${var.repo_name}"
 }
 
 resource "aws_vpc" "this" {
@@ -262,4 +263,270 @@ resource "aws_ecs_service" "this" {
   }
 
   depends_on = [aws_lb_listener.http]
+}
+
+resource "aws_codestarconnections_connection" "github" {
+  count         = var.codestar_connection_arn == "" ? 1 : 0
+  name          = var.codestar_connection_name
+  provider_type = "GitHub"
+}
+
+locals {
+  source_connection_arn = var.codestar_connection_arn != "" ? var.codestar_connection_arn : aws_codestarconnections_connection.github[0].arn
+}
+
+resource "aws_s3_bucket" "pipeline_artifacts" {
+  bucket_prefix = "${local.name_prefix}-pipeline-artifacts-"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_versioning" "pipeline_artifacts" {
+  bucket = aws_s3_bucket.pipeline_artifacts.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "pipeline_artifacts" {
+  bucket = aws_s3_bucket.pipeline_artifacts.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket" "terraform_state" {
+  bucket_prefix = "${local.name_prefix}-tfstate-"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_versioning" "terraform_state" {
+  bucket = aws_s3_bucket.terraform_state.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" {
+  bucket = aws_s3_bucket.terraform_state.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_iam_role" "codebuild" {
+  name = "${local.name_prefix}-codebuild"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "codebuild.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "codebuild" {
+  name = "${local.name_prefix}-codebuild-policy"
+  role = aws_iam_role.codebuild.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+          "s3:PutObject",
+          "s3:GetBucketAcl",
+          "s3:GetBucketLocation",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.pipeline_artifacts.arn,
+          "${aws_s3_bucket.pipeline_artifacts.arn}/*",
+          aws_s3_bucket.terraform_state.arn,
+          "${aws_s3_bucket.terraform_state.arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = "*"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role" "codepipeline" {
+  name = "${local.name_prefix}-codepipeline"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "codepipeline.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "codepipeline" {
+  name = "${local.name_prefix}-codepipeline-policy"
+  role = aws_iam_role.codepipeline.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+          "s3:GetBucketVersioning",
+          "s3:PutObjectAcl",
+          "s3:PutObject"
+        ]
+        Resource = [
+          aws_s3_bucket.pipeline_artifacts.arn,
+          "${aws_s3_bucket.pipeline_artifacts.arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "codestar-connections:UseConnection"
+        ]
+        Resource = local.source_connection_arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "codebuild:BatchGetBuilds",
+          "codebuild:StartBuild"
+        ]
+        Resource = aws_codebuild_project.terraform.arn
+      }
+    ]
+  })
+}
+
+resource "aws_codebuild_project" "terraform" {
+  name         = "${local.name_prefix}-terraform"
+  service_role = aws_iam_role.codebuild.arn
+
+  artifacts {
+    type = "CODEPIPELINE"
+  }
+
+  environment {
+    compute_type                = var.codebuild_compute_type
+    image                       = var.codebuild_image
+    type                        = "LINUX_CONTAINER"
+    image_pull_credentials_type = "CODEBUILD"
+
+    environment_variable {
+      name  = "AWS_DEFAULT_REGION"
+      value = var.aws_region
+    }
+
+    environment_variable {
+      name  = "TF_STATE_BUCKET"
+      value = aws_s3_bucket.terraform_state.bucket
+    }
+
+    environment_variable {
+      name  = "TF_STATE_KEY"
+      value = var.terraform_state_key
+    }
+  }
+
+  source {
+    type      = "CODEPIPELINE"
+    buildspec = "buildspec-infra.yml"
+  }
+
+  logs_config {
+    cloudwatch_logs {
+      group_name = "/aws/codebuild/${local.name_prefix}-terraform"
+    }
+  }
+}
+
+resource "aws_codepipeline" "terraform" {
+  name     = "${local.name_prefix}-pipeline"
+  role_arn = aws_iam_role.codepipeline.arn
+
+  artifact_store {
+    location = aws_s3_bucket.pipeline_artifacts.bucket
+    type     = "S3"
+  }
+
+  stage {
+    name = "Source"
+
+    action {
+      name             = "Source"
+      category         = "Source"
+      owner            = "AWS"
+      provider         = "CodeStarSourceConnection"
+      version          = "1"
+      output_artifacts = ["SourceArtifact"]
+
+      configuration = {
+        ConnectionArn        = local.source_connection_arn
+        FullRepositoryId     = local.repo_full_name
+        BranchName           = var.repo_branch
+        OutputArtifactFormat = "CODE_ZIP"
+      }
+    }
+  }
+
+  stage {
+    name = "DeployInfra"
+
+    action {
+      name            = "TerraformApply"
+      category        = "Build"
+      owner           = "AWS"
+      provider        = "CodeBuild"
+      version         = "1"
+      input_artifacts = ["SourceArtifact"]
+
+      configuration = {
+        ProjectName = aws_codebuild_project.terraform.name
+      }
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy.codepipeline,
+    aws_iam_role_policy.codebuild
+  ]
 }
