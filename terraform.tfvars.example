@@ -7,14 +7,3 @@ container_port  = 80
 task_cpu        = 256
 task_memory     = 512
 desired_count   = 2
-codedeploy_test_listener_port  = 8080
-codedeploy_deployment_config_name = "CodeDeployDefault.ECSAllAtOnce"
-
-ecr_repository_name   = "warwick/images"
-codestar_connection_arn = ""
-codestar_connection_name = "warwick-github-connection"
-repo_owner            = "your-github-owner"
-repo_name             = "your-repo-name"
-repo_branch           = "main"
-codebuild_compute_type = "BUILD_GENERAL1_SMALL"
-codebuild_image       = "aws/codebuild/standard:7.0"

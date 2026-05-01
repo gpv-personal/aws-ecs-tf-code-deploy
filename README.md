@@ -1,28 +1,22 @@
-# Terraform ECS + CI/CD on AWS
+# Terraform ECS Infrastructure on AWS
 
-This project provisions a complete baseline to run a containerized application on **Amazon ECS (Fargate)**, with deployments managed by **AWS CodeDeploy (blue/green)** and a full CI/CD path through **CodePipeline + CodeBuild**.
+This project provisions the underlying infrastructure to run a containerized application on Amazon ECS Fargate. It is intentionally focused on the runtime platform rather than image build or deployment automation.
 
 ## What it creates
 
 - VPC with public subnets across two Availability Zones
-- Public subnets for ALB and ECS tasks
-- Internet Gateway
-- Application Load Balancer + blue/green target groups + prod/test HTTP listeners
+- Internet Gateway and public route table
+- Application Load Balancer with a single HTTP listener
 - ECS cluster with Container Insights enabled
-- ECS task definition and ECS service (Fargate, `CODE_DEPLOY` controller)
-- IAM execution role and task role
-- CodeDeploy application + deployment group + IAM role
-- ECR repository for application images
-- CodeBuild project to build Docker image, push to ECR, and generate deployment artifacts
-- CodePipeline with Source (GitHub via CodeStar connection), Build, and Deploy (CodeDeployToECS) stages
-- S3 artifact bucket for CodePipeline
+- ECS task definition and ECS service on Fargate
+- IAM task execution role and task role
 - CloudWatch log group for container logs
 
 ## Prerequisites
 
 - Terraform >= 1.5
-- AWS account and credentials configured (for example via `aws configure`)
-- Permissions to create VPC, ECS, ELB, IAM, CloudWatch, CodeBuild, CodePipeline, ECR, S3, and CodeStar connections
+- AWS account and credentials configured
+- Permissions to create VPC, ECS, ELB, IAM, and CloudWatch resources
 
 ## Usage
 
@@ -38,41 +32,29 @@ This project provisions a complete baseline to run a containerized application o
    terraform init
    ```
 
-3. Review plan:
+3. Review the planned infrastructure:
 
    ```bash
    terraform plan
    ```
 
-4. Apply:
+4. Apply the stack:
 
    ```bash
    terraform apply
    ```
 
-5. If Terraform created the CodeStar connection (you left `codestar_connection_arn` empty), authorize it once in AWS Console:
-
-   - Open Developer Tools > Settings > Connections
-   - Find the connection output by Terraform
-   - Complete the GitHub handshake (status must become `AVAILABLE`)
-
-6. After apply, use the ALB output:
+5. Retrieve the load balancer endpoint:
 
    ```bash
    terraform output alb_dns_name
    ```
 
-7. Confirm deployment resources:
+## Variables
 
-   ```bash
-   terraform output codedeploy_app_name
-   terraform output codedeploy_deployment_group_name
-   terraform output ecr_repository_url
-   terraform output codebuild_project_name
-   terraform output codepipeline_name
-   ```
-
-8. Trigger a deployment by committing to the configured branch.
+- `container_image` sets the image used by the ECS task definition.
+- `container_port` sets the port exposed by the container and target group.
+- `desired_count`, `task_cpu`, and `task_memory` control the Fargate service shape.
 
 ## Cleanup
 
@@ -82,20 +64,7 @@ terraform destroy
 
 ## Notes
 
-- This starter exposes HTTP (port 80) publicly via the ALB.
-- A second HTTP listener (default `8080`) is created for CodeDeploy test traffic.
+- This stack exposes HTTP on port 80 through the ALB.
 - ECS tasks run in public subnets and are assigned public IPs.
 - NAT gateways are not used in this sandbox configuration to reduce cost.
-- `container_image` is used for initial bootstrap task definition. Subsequent deployments are performed by CodePipeline/CodeBuild/CodeDeploy.
-- Source repository must contain a `Dockerfile` and `buildspec.yml` at the repository root.
-
-## Pipeline Artifact Flow
-
-CodeDeploy does not pull artifacts from GitHub directly. This stack uses:
-
-1. Source stage pulls your repo through CodeStar connection.
-2. Build stage (`buildspec.yml`) builds image and pushes to ECR.
-3. Build stage generates `taskdef.json`, `appspec.yaml`, and `imageDetail.json` artifacts.
-4. Deploy stage uses `CodeDeployToECS` for blue/green ECS rollout.
-
-An AppSpec example remains available at `deployment/appspec.yaml.example`.
+- The stack does not build or publish container images; supply a reachable image reference via `container_image`.
