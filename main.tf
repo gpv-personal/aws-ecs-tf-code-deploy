@@ -81,14 +81,6 @@ resource "aws_security_group" "alb" {
   }
 
   ingress {
-    description = "CodeDeploy test listener"
-    from_port   = var.codedeploy_test_listener_port
-    to_port     = var.codedeploy_test_listener_port
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -158,27 +150,6 @@ resource "aws_lb_target_group" "blue" {
   }
 }
 
-resource "aws_lb_target_group" "green" {
-  name        = substr(replace("${local.name_prefix}-green", "_", "-"), 0, 32)
-  port        = var.container_port
-  protocol    = "HTTP"
-  target_type = "ip"
-  vpc_id      = aws_vpc.this.id
-
-  health_check {
-    path                = "/"
-    matcher             = "200-399"
-    healthy_threshold   = 2
-    unhealthy_threshold = 5
-    timeout             = 5
-    interval            = 30
-  }
-
-  tags = {
-    Name = "${local.name_prefix}-green"
-  }
-}
-
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80
@@ -187,17 +158,6 @@ resource "aws_lb_listener" "http" {
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.blue.arn
-  }
-}
-
-resource "aws_lb_listener" "test" {
-  load_balancer_arn = aws_lb.this.arn
-  port              = var.codedeploy_test_listener_port
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.green.arn
   }
 }
 
@@ -239,26 +199,6 @@ resource "aws_iam_role" "ecs_task" {
       Action = "sts:AssumeRole"
     }]
   })
-}
-
-resource "aws_iam_role" "codedeploy" {
-  name = "${local.name_prefix}-codedeploy"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "codedeploy.amazonaws.com"
-      }
-      Action = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "codedeploy" {
-  role       = aws_iam_role.codedeploy.name
-  policy_arn = "arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS"
 }
 
 resource "aws_ecs_cluster" "this" {
@@ -310,10 +250,6 @@ resource "aws_ecs_service" "this" {
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
 
-  deployment_controller {
-    type = "CODE_DEPLOY"
-  }
-
   network_configuration {
     subnets          = [for subnet in aws_subnet.public : subnet.id]
     security_groups  = [aws_security_group.service.id]
@@ -326,82 +262,7 @@ resource "aws_ecs_service" "this" {
     container_port   = var.container_port
   }
 
-  lifecycle {
-    # CodeDeploy updates task definition and target groups during deployments.
-    ignore_changes = [task_definition, load_balancer]
-  }
-
-  depends_on = [aws_lb_listener.http, aws_lb_listener.test]
-}
-
-resource "aws_codedeploy_app" "ecs" {
-  name             = "${local.name_prefix}-app"
-  compute_platform = "ECS"
-}
-
-resource "aws_codedeploy_deployment_group" "ecs" {
-  app_name              = aws_codedeploy_app.ecs.name
-  deployment_group_name = "${local.name_prefix}-dg"
-  service_role_arn      = aws_iam_role.codedeploy.arn
-  deployment_config_name = var.codedeploy_deployment_config_name
-
-  deployment_style {
-    deployment_type   = "BLUE_GREEN"
-    deployment_option = "WITH_TRAFFIC_CONTROL"
-  }
-
-  blue_green_deployment_config {
-    deployment_ready_option {
-      action_on_timeout = "CONTINUE_DEPLOYMENT"
-    }
-
-    terminate_blue_instances_on_deployment_success {
-      action                           = "TERMINATE"
-      termination_wait_time_in_minutes = 5
-    }
-  }
-
-  auto_rollback_configuration {
-    enabled = true
-    events  = ["DEPLOYMENT_FAILURE"]
-  }
-
-  ecs_service {
-    cluster_name = aws_ecs_cluster.this.name
-    service_name = aws_ecs_service.this.name
-  }
-
-  load_balancer_info {
-    target_group_pair_info {
-      prod_traffic_route {
-        listener_arns = [aws_lb_listener.http.arn]
-      }
-
-      test_traffic_route {
-        listener_arns = [aws_lb_listener.test.arn]
-      }
-
-      target_group {
-        name = aws_lb_target_group.blue.name
-      }
-
-      target_group {
-        name = aws_lb_target_group.green.name
-      }
-    }
-  }
-
-  depends_on = [aws_iam_role_policy_attachment.codedeploy]
-}
-
-resource "aws_ecr_repository" "app" {
-  name                 = var.ecr_repository_name
-  image_tag_mutability = "MUTABLE"
-  force_delete         = true
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
+  depends_on = [aws_lb_listener.http]
 }
 
 resource "aws_codestarconnections_connection" "github" {
@@ -429,6 +290,29 @@ resource "aws_s3_bucket_versioning" "pipeline_artifacts" {
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "pipeline_artifacts" {
   bucket = aws_s3_bucket.pipeline_artifacts.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket" "terraform_state" {
+  bucket_prefix = "${local.name_prefix}-tfstate-"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_versioning" "terraform_state" {
+  bucket = aws_s3_bucket.terraform_state.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" {
+  bucket = aws_s3_bucket.terraform_state.id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -477,37 +361,19 @@ resource "aws_iam_role_policy" "codebuild" {
           "s3:GetObjectVersion",
           "s3:PutObject",
           "s3:GetBucketAcl",
-          "s3:GetBucketLocation"
+          "s3:GetBucketLocation",
+          "s3:ListBucket"
         ]
         Resource = [
           aws_s3_bucket.pipeline_artifacts.arn,
-          "${aws_s3_bucket.pipeline_artifacts.arn}/*"
+          "${aws_s3_bucket.pipeline_artifacts.arn}/*",
+          aws_s3_bucket.terraform_state.arn,
+          "${aws_s3_bucket.terraform_state.arn}/*"
         ]
       },
       {
         Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:CompleteLayerUpload",
-          "ecr:InitiateLayerUpload",
-          "ecr:PutImage",
-          "ecr:UploadLayerPart"
-        ]
-        Resource = aws_ecr_repository.app.arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecs:DescribeServices",
-          "ecs:DescribeTaskDefinition"
-        ]
+        Action = "*"
         Resource = "*"
       }
     ]
@@ -565,44 +431,14 @@ resource "aws_iam_role_policy" "codepipeline" {
           "codebuild:BatchGetBuilds",
           "codebuild:StartBuild"
         ]
-        Resource = aws_codebuild_project.this.arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "codedeploy:CreateDeployment",
-          "codedeploy:GetApplication",
-          "codedeploy:GetApplicationRevision",
-          "codedeploy:GetDeployment",
-          "codedeploy:GetDeploymentConfig",
-          "codedeploy:RegisterApplicationRevision"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ecs:RegisterTaskDefinition",
-          "ecs:DescribeTaskDefinition"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "iam:PassRole"
-        ]
-        Resource = [
-          aws_iam_role.ecs_task_execution.arn,
-          aws_iam_role.ecs_task.arn
-        ]
+        Resource = aws_codebuild_project.terraform.arn
       }
     ]
   })
 }
 
-resource "aws_codebuild_project" "this" {
-  name         = "${local.name_prefix}-build"
+resource "aws_codebuild_project" "terraform" {
+  name         = "${local.name_prefix}-terraform"
   service_role = aws_iam_role.codebuild.arn
 
   artifacts {
@@ -613,7 +449,6 @@ resource "aws_codebuild_project" "this" {
     compute_type                = var.codebuild_compute_type
     image                       = var.codebuild_image
     type                        = "LINUX_CONTAINER"
-    privileged_mode             = true
     image_pull_credentials_type = "CODEBUILD"
 
     environment_variable {
@@ -622,44 +457,29 @@ resource "aws_codebuild_project" "this" {
     }
 
     environment_variable {
-      name  = "ECR_REPO_URI"
-      value = aws_ecr_repository.app.repository_url
+      name  = "TF_STATE_BUCKET"
+      value = aws_s3_bucket.terraform_state.bucket
     }
 
     environment_variable {
-      name  = "ECS_CLUSTER_NAME"
-      value = aws_ecs_cluster.this.name
-    }
-
-    environment_variable {
-      name  = "ECS_SERVICE_NAME"
-      value = aws_ecs_service.this.name
-    }
-
-    environment_variable {
-      name  = "CONTAINER_NAME"
-      value = local.container_name
-    }
-
-    environment_variable {
-      name  = "CONTAINER_PORT"
-      value = tostring(var.container_port)
+      name  = "TF_STATE_KEY"
+      value = var.terraform_state_key
     }
   }
 
   source {
     type      = "CODEPIPELINE"
-    buildspec = "buildspec.yml"
+    buildspec = "buildspec-infra.yml"
   }
 
   logs_config {
     cloudwatch_logs {
-      group_name = "/aws/codebuild/${local.name_prefix}-build"
+      group_name = "/aws/codebuild/${local.name_prefix}-terraform"
     }
   }
 }
 
-resource "aws_codepipeline" "this" {
+resource "aws_codepipeline" "terraform" {
   name     = "${local.name_prefix}-pipeline"
   role_arn = aws_iam_role.codepipeline.arn
 
@@ -689,43 +509,18 @@ resource "aws_codepipeline" "this" {
   }
 
   stage {
-    name = "Build"
+    name = "DeployInfra"
 
     action {
-      name             = "Build"
-      category         = "Build"
-      owner            = "AWS"
-      provider         = "CodeBuild"
-      version          = "1"
-      input_artifacts  = ["SourceArtifact"]
-      output_artifacts = ["BuildArtifact"]
-
-      configuration = {
-        ProjectName = aws_codebuild_project.this.name
-      }
-    }
-  }
-
-  stage {
-    name = "Deploy"
-
-    action {
-      name            = "DeployToECS"
-      category        = "Deploy"
+      name            = "TerraformApply"
+      category        = "Build"
       owner           = "AWS"
-      provider        = "CodeDeployToECS"
+      provider        = "CodeBuild"
       version         = "1"
-      input_artifacts = ["BuildArtifact"]
+      input_artifacts = ["SourceArtifact"]
 
       configuration = {
-        ApplicationName                = aws_codedeploy_app.ecs.name
-        DeploymentGroupName            = aws_codedeploy_deployment_group.ecs.deployment_group_name
-        TaskDefinitionTemplateArtifact = "BuildArtifact"
-        TaskDefinitionTemplatePath     = "taskdef.json"
-        AppSpecTemplateArtifact        = "BuildArtifact"
-        AppSpecTemplatePath            = "appspec.yaml"
-        Image1ArtifactName             = "BuildArtifact"
-        Image1ContainerName            = "IMAGE1_NAME"
+        ProjectName = aws_codebuild_project.terraform.name
       }
     }
   }

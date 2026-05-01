@@ -52,24 +52,6 @@ variable "desired_count" {
   default     = 2
 }
 
-variable "codedeploy_test_listener_port" {
-  description = "ALB listener port used by CodeDeploy for test traffic"
-  type        = number
-  default     = 8080
-}
-
-variable "codedeploy_deployment_config_name" {
-  description = "CodeDeploy ECS deployment config"
-  type        = string
-  default     = "CodeDeployDefault.ECSAllAtOnce"
-}
-
-variable "ecr_repository_name" {
-  description = "ECR repository name used by CodeBuild for container images"
-  type        = string
-  default     = "warwick/images"
-}
-
 variable "codestar_connection_arn" {
   description = "Existing CodeStar connection ARN for CodePipeline source. Leave empty to create one in Terraform."
   type        = string
@@ -85,11 +67,13 @@ variable "codestar_connection_name" {
 variable "repo_owner" {
   description = "GitHub owner or organization for CodePipeline source"
   type        = string
+  default     = "gpv-personal"
 }
 
 variable "repo_name" {
   description = "GitHub repository name for CodePipeline source"
   type        = string
+  default     = "aws-ecs-tf-code-deploy"
 }
 
 variable "repo_branch" {
@@ -99,7 +83,7 @@ variable "repo_branch" {
 }
 
 variable "codebuild_compute_type" {
-  description = "CodeBuild compute type"
+  description = "CodeBuild compute type for Terraform runs"
   type        = string
   default     = "BUILD_GENERAL1_SMALL"
 }
@@ -108,4 +92,10 @@ variable "codebuild_image" {
   description = "Docker image for CodeBuild environment"
   type        = string
   default     = "aws/codebuild/standard:7.0"
+}
+
+variable "terraform_state_key" {
+  description = "Object key used by the pipeline to persist Terraform state in S3"
+  type        = string
+  default     = "terraform/terraform.tfstate"
 }

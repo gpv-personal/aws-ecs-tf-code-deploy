@@ -1,0 +1,26 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - echo "Ensuring Terraform is available"
+      - |
+        if ! command -v terraform >/dev/null 2>&1; then
+          curl -sSLo /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip
+          unzip -o /tmp/terraform.zip -d /usr/local/bin
+        fi
+      - terraform version
+  pre_build:
+    commands:
+      - echo "Using state object s3://$TF_STATE_BUCKET/$TF_STATE_KEY"
+      - aws s3 cp "s3://$TF_STATE_BUCKET/$TF_STATE_KEY" terraform.tfstate || echo "No prior state object found; continuing"
+  build:
+    commands:
+      - terraform init -input=false
+      - terraform validate
+      - terraform plan -input=false -out=tfplan
+      - terraform apply -input=false -auto-approve tfplan
+  post_build:
+    commands:
+      - aws s3 cp terraform.tfstate "s3://$TF_STATE_BUCKET/$TF_STATE_KEY"
+      - aws s3 cp terraform.tfstate.backup "s3://$TF_STATE_BUCKET/${TF_STATE_KEY}.backup" || true
