@@ -24,9 +24,10 @@ phases:
         fi
   build:
     commands:
+      - test -f terraform.pipeline.tfvars
       - terraform init -input=false
       - terraform validate
-      - terraform plan -input=false -out=tfplan
+      - terraform plan -input=false -var-file=terraform.pipeline.tfvars -out=tfplan
       - terraform apply -input=false -auto-approve tfplan
   post_build:
     commands:

@@ -79,6 +79,18 @@ This project provisions the underlying infrastructure to run a containerized app
 - `repo_owner`, `repo_name`, and `repo_branch` configure the pipeline source.
 - `terraform_state_key` sets where pipeline Terraform state is stored in S3.
 
+### Changing the ECS image via CodePipeline
+
+CodePipeline does not use `terraform.tfvars` because that file is git-ignored.
+
+To change the deployed container image for pipeline runs:
+
+1. Update `container_image` in `terraform.pipeline.tfvars`.
+2. Commit and push the change.
+3. Run/release the pipeline.
+
+`buildspec-infra.yml` passes `-var-file=terraform.pipeline.tfvars` to Terraform plan/apply, so the image now comes from source control.
+
 ## Cleanup
 
 ```bash
