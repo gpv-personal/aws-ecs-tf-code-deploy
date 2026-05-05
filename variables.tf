@@ -67,7 +67,7 @@ variable "health_check_matcher" {
 variable "health_check_grace_period_seconds" {
   description = "Seconds to ignore failing health checks while a new ECS task starts"
   type        = number
-  default     = 60
+  default     = 180
 }
 
 variable "codestar_connection_arn" {
