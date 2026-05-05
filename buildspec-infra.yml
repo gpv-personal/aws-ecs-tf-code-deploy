@@ -13,7 +13,15 @@ phases:
   pre_build:
     commands:
       - echo "Using state object s3://$TF_STATE_BUCKET/$TF_STATE_KEY"
-      - aws s3 cp "s3://$TF_STATE_BUCKET/$TF_STATE_KEY" terraform.tfstate || echo "No prior state object found; continuing"
+      - rm -f terraform.tfstate terraform.tfstate.backup tfplan
+      - |
+        if aws s3api head-object --bucket "$TF_STATE_BUCKET" --key "$TF_STATE_KEY" >/dev/null 2>&1; then
+          aws s3 cp "s3://$TF_STATE_BUCKET/$TF_STATE_KEY" terraform.tfstate
+        else
+          echo "ERROR: Missing Terraform state object s3://$TF_STATE_BUCKET/$TF_STATE_KEY"
+          echo "Bootstrap once by uploading the authoritative state, then re-run the pipeline."
+          exit 1
+        fi
   build:
     commands:
       - terraform init -input=false

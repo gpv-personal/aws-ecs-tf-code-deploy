@@ -61,6 +61,8 @@ This project provisions the underlying infrastructure to run a containerized app
    aws s3 cp terraform.tfstate "s3://$bucket/terraform/terraform.tfstate"
    ```
 
+   The pipeline now fails fast when this state object is missing to prevent accidental recreation of existing resources.
+
 7. If Terraform created the CodeStar connection (you left `codestar_connection_arn` empty), authorize it once in AWS Console:
 
    - Open Developer Tools > Settings > Connections
