@@ -137,8 +137,8 @@ resource "aws_lb_target_group" "blue" {
   vpc_id      = aws_vpc.this.id
 
   health_check {
-    path                = "/"
-    matcher             = "200-399"
+    path                = var.health_check_path
+    matcher             = var.health_check_matcher
     healthy_threshold   = 2
     unhealthy_threshold = 5
     timeout             = 5
@@ -249,6 +249,7 @@ resource "aws_ecs_service" "this" {
   task_definition = aws_ecs_task_definition.this.arn
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
+  health_check_grace_period_seconds = var.health_check_grace_period_seconds
 
   network_configuration {
     subnets          = [for subnet in aws_subnet.public : subnet.id]

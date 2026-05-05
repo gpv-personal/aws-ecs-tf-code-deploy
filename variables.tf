@@ -52,6 +52,24 @@ variable "desired_count" {
   default     = 2
 }
 
+variable "health_check_path" {
+  description = "HTTP path used by the ALB target group health check"
+  type        = string
+  default     = "/"
+}
+
+variable "health_check_matcher" {
+  description = "Expected HTTP status codes for healthy target responses"
+  type        = string
+  default     = "200-399"
+}
+
+variable "health_check_grace_period_seconds" {
+  description = "Seconds to ignore failing health checks while a new ECS task starts"
+  type        = number
+  default     = 60
+}
+
 variable "codestar_connection_arn" {
   description = "Existing CodeStar connection ARN for CodePipeline source. Leave empty to create one in Terraform."
   type        = string
