@@ -7,6 +7,25 @@ container_port  = 80
 task_cpu        = 256
 task_memory     = 512
 desired_count   = 2
+
+# Preferred model for multiple services: one container per ECS service.
+# You can remove this block and use container_image/container_port instead for a single-service setup.
+services = {
+	app = {
+		image          = "public.ecr.aws/nginx/nginx:stable-alpine"
+		container_port = 80
+		desired_count  = 2
+		path_pattern   = "/*"
+	}
+	api = {
+		image             = "public.ecr.aws/docker/library/httpd:2.4"
+		container_port    = 8080
+		desired_count     = 1
+		path_pattern      = "/api*"
+		listener_priority = 110
+	}
+}
+
 health_check_path                 = "/"
 health_check_matcher              = "200-399"
 health_check_grace_period_seconds = 180

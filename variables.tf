@@ -52,6 +52,23 @@ variable "desired_count" {
   default     = 2
 }
 
+variable "services" {
+  description = "Map of ECS services to run; each entry creates one ECS service and one one-container task definition"
+  type = map(object({
+    image                = string
+    container_port       = number
+    container_name       = optional(string)
+    desired_count        = optional(number)
+    task_cpu             = optional(number)
+    task_memory          = optional(number)
+    health_check_path    = optional(string)
+    health_check_matcher = optional(string)
+    path_pattern         = optional(string)
+    listener_priority    = optional(number)
+  }))
+  default = {}
+}
+
 variable "health_check_path" {
   description = "HTTP path used by the ALB target group health check"
   type        = string

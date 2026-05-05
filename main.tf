@@ -11,8 +11,41 @@ locals {
 
   public_subnets = zipmap(local.azs, local.public_subnet_cidrs)
 
-  container_name = "app"
   repo_full_name = "${var.repo_owner}/${var.repo_name}"
+
+  legacy_services = {
+    app = {
+      container_name       = "app"
+      image                = var.container_image
+      container_port       = var.container_port
+      desired_count        = var.desired_count
+      task_cpu             = var.task_cpu
+      task_memory          = var.task_memory
+      health_check_path    = var.health_check_path
+      health_check_matcher = var.health_check_matcher
+      path_pattern         = "/*"
+      listener_priority    = 100
+    }
+  }
+
+  input_services = length(var.services) > 0 ? var.services : local.legacy_services
+
+  service_definitions = {
+    for service_name, service in local.input_services : service_name => {
+      container_name       = coalesce(try(service.container_name, null), service_name)
+      image                = service.image
+      container_port       = service.container_port
+      desired_count        = coalesce(try(service.desired_count, null), var.desired_count)
+      task_cpu             = coalesce(try(service.task_cpu, null), var.task_cpu)
+      task_memory          = coalesce(try(service.task_memory, null), var.task_memory)
+      health_check_path    = coalesce(try(service.health_check_path, null), var.health_check_path)
+      health_check_matcher = coalesce(try(service.health_check_matcher, null), var.health_check_matcher)
+      path_pattern         = coalesce(try(service.path_pattern, null), service_name == "app" ? "/*" : "/${service_name}*")
+      listener_priority    = coalesce(try(service.listener_priority, null), 100 + index(sort(keys(local.input_services)), service_name))
+    }
+  }
+
+  primary_service_name = sort(keys(local.service_definitions))[0]
 }
 
 resource "aws_vpc" "this" {
@@ -93,14 +126,15 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_security_group" "service" {
-  name        = "${local.name_prefix}-service-sg"
+  for_each    = local.service_definitions
+  name        = substr(replace("${local.name_prefix}-${each.key}-sg", "_", "-"), 0, 255)
   description = "Security group for ECS service"
   vpc_id      = aws_vpc.this.id
 
   ingress {
     description     = "Allow ALB traffic"
-    from_port       = var.container_port
-    to_port         = var.container_port
+    from_port       = each.value.container_port
+    to_port         = each.value.container_port
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }
@@ -113,7 +147,7 @@ resource "aws_security_group" "service" {
   }
 
   tags = {
-    Name = "${local.name_prefix}-service-sg"
+    Name = "${local.name_prefix}-${each.key}-service-sg"
   }
 }
 
@@ -129,16 +163,17 @@ resource "aws_lb" "this" {
   }
 }
 
-resource "aws_lb_target_group" "blue" {
-  name        = substr(replace("${local.name_prefix}-blue", "_", "-"), 0, 32)
-  port        = var.container_port
+resource "aws_lb_target_group" "this" {
+  for_each    = local.service_definitions
+  name        = substr(replace("${local.name_prefix}-${each.key}", "_", "-"), 0, 32)
+  port        = each.value.container_port
   protocol    = "HTTP"
   target_type = "ip"
   vpc_id      = aws_vpc.this.id
 
   health_check {
-    path                = var.health_check_path
-    matcher             = var.health_check_matcher
+    path                = each.value.health_check_path
+    matcher             = each.value.health_check_matcher
     healthy_threshold   = 2
     unhealthy_threshold = 5
     timeout             = 5
@@ -146,7 +181,7 @@ resource "aws_lb_target_group" "blue" {
   }
 
   tags = {
-    Name = "${local.name_prefix}-blue"
+    Name = "${local.name_prefix}-${each.key}"
   }
 }
 
@@ -157,7 +192,24 @@ resource "aws_lb_listener" "http" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.blue.arn
+    target_group_arn = aws_lb_target_group.this[local.primary_service_name].arn
+  }
+}
+
+resource "aws_lb_listener_rule" "service" {
+  for_each     = { for service_name, service in local.service_definitions : service_name => service if service_name != local.primary_service_name }
+  listener_arn = aws_lb_listener.http.arn
+  priority     = each.value.listener_priority
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.this[each.key].arn
+  }
+
+  condition {
+    path_pattern {
+      values = [each.value.path_pattern]
+    }
   }
 }
 
@@ -211,9 +263,10 @@ resource "aws_ecs_cluster" "this" {
 }
 
 resource "aws_ecs_task_definition" "this" {
-  family                   = "${local.name_prefix}-task"
-  cpu                      = tostring(var.task_cpu)
-  memory                   = tostring(var.task_memory)
+  for_each                 = local.service_definitions
+  family                   = substr(replace("${local.name_prefix}-${each.key}-task", "_", "-"), 0, 255)
+  cpu                      = tostring(each.value.task_cpu)
+  memory                   = tostring(each.value.task_memory)
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
@@ -221,13 +274,13 @@ resource "aws_ecs_task_definition" "this" {
 
   container_definitions = jsonencode([
     {
-      name      = local.container_name
-      image     = var.container_image
+      name      = each.value.container_name
+      image     = each.value.image
       essential = true
       portMappings = [
         {
-          containerPort = var.container_port
-          hostPort      = var.container_port
+          containerPort = each.value.container_port
+          hostPort      = each.value.container_port
           protocol      = "tcp"
         }
       ]
@@ -244,23 +297,24 @@ resource "aws_ecs_task_definition" "this" {
 }
 
 resource "aws_ecs_service" "this" {
-  name            = "${local.name_prefix}-service"
+  for_each        = local.service_definitions
+  name            = "${local.name_prefix}-${each.key}-service"
   cluster         = aws_ecs_cluster.this.id
-  task_definition = aws_ecs_task_definition.this.arn
-  desired_count   = var.desired_count
+  task_definition = aws_ecs_task_definition.this[each.key].arn
+  desired_count   = each.value.desired_count
   launch_type     = "FARGATE"
   health_check_grace_period_seconds = var.health_check_grace_period_seconds
 
   network_configuration {
     subnets          = [for subnet in aws_subnet.public : subnet.id]
-    security_groups  = [aws_security_group.service.id]
+    security_groups  = [aws_security_group.service[each.key].id]
     assign_public_ip = true
   }
 
   load_balancer {
-    target_group_arn = aws_lb_target_group.blue.arn
-    container_name   = local.container_name
-    container_port   = var.container_port
+    target_group_arn = aws_lb_target_group.this[each.key].arn
+    container_name   = each.value.container_name
+    container_port   = each.value.container_port
   }
 
   depends_on = [aws_lb_listener.http]

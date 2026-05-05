@@ -9,8 +9,13 @@ output "ecs_cluster_name" {
 }
 
 output "ecs_service_name" {
-  description = "Name of the ECS service"
-  value       = aws_ecs_service.this.name
+  description = "Name of the primary ECS service (for backward compatibility)"
+  value       = aws_ecs_service.this[local.primary_service_name].name
+}
+
+output "ecs_service_names" {
+  description = "Names of all ECS services"
+  value       = { for service_name, service in aws_ecs_service.this : service_name => service.name }
 }
 
 output "alb_dns_name" {

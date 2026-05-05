@@ -8,7 +8,7 @@ This project provisions the underlying infrastructure to run a containerized app
 - Internet Gateway and public route table
 - Application Load Balancer with a single HTTP listener
 - ECS cluster with Container Insights enabled
-- ECS task definition and ECS service on Fargate
+- One ECS task definition and one ECS service per configured service (one container per service)
 - IAM task execution role and task role
 - CloudWatch log group for container logs
 - CodeStar connection (or use an existing one) for GitHub source integration
@@ -73,23 +73,28 @@ This project provisions the underlying infrastructure to run a containerized app
 
 ## Variables
 
-- `container_image` sets the image used by the ECS task definition.
-- `container_port` sets the port exposed by the container and target group.
-- `desired_count`, `task_cpu`, and `task_memory` control the Fargate service shape.
+- `services` configures one or more ECS services. Each service defines its own image, container port, desired count, health check settings, and ALB path routing.
+- Legacy single-service variables (`container_image`, `container_port`, `desired_count`, `task_cpu`, `task_memory`) are still supported when `services` is empty.
 - `repo_owner`, `repo_name`, and `repo_branch` configure the pipeline source.
 - `terraform_state_key` sets where pipeline Terraform state is stored in S3.
 
-### Changing the ECS image via CodePipeline
+### Changing images via CodePipeline
 
 CodePipeline does not use `terraform.tfvars` because that file is git-ignored.
 
-To change the deployed container image for pipeline runs:
+To change deployed images for pipeline runs:
 
-1. Update `container_image` in `terraform.pipeline.tfvars`.
+1. Update the `services` map in `terraform.pipeline.tfvars`.
 2. Commit and push the change.
 3. Run/release the pipeline.
 
 `buildspec-infra.yml` passes `-var-file=terraform.pipeline.tfvars` to Terraform plan/apply, so the image now comes from source control.
+
+### Multiple services routing
+
+- One service is selected as the default ALB route.
+- Additional services are routed with listener rules using each service `path_pattern` and `listener_priority`.
+- Example: set `app` to `/*` and `api` to `/api*`.
 
 ## Cleanup
 
@@ -102,5 +107,5 @@ terraform destroy
 - This stack exposes HTTP on port 80 through the ALB.
 - ECS tasks run in public subnets and are assigned public IPs.
 - NAT gateways are not used in this sandbox configuration to reduce cost.
-- The stack does not build or publish container images; supply a reachable image reference via `container_image`.
+- The stack does not build or publish container images; supply reachable image references in `services` (or `container_image` for legacy single-service mode).
 - The pipeline uses `buildspec-infra.yml` and executes Terraform apply from CodeBuild.
