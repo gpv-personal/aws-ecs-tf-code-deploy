@@ -62,10 +62,7 @@ locals {
       health_check_path    = coalesce(try(service.health_check_path, null), var.health_check_path)
       health_check_matcher = coalesce(try(service.health_check_matcher, null), var.health_check_matcher)
       host_headers         = try(service.host_headers, null)
-      path_pattern         = coalesce(
-        try(service.path_pattern, null),
-        try(service.host_headers, null) != null ? null : (service_name == "app" ? "/*" : "/${service_name}*")
-      )
+      path_pattern         = try(service.path_pattern, null) != null ? try(service.path_pattern, null) : (try(service.host_headers, null) != null ? null : (service_name == "app" ? "/*" : "/${service_name}*"))
       listener_priority    = coalesce(try(service.listener_priority, null), 100 + index(sort(keys(local.input_services)), service_name))
     }
   }
