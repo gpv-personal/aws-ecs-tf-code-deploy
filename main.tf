@@ -2,6 +2,26 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+moved {
+  from = aws_security_group.service
+  to   = aws_security_group.service["app"]
+}
+
+moved {
+  from = aws_lb_target_group.blue
+  to   = aws_lb_target_group.this["app"]
+}
+
+moved {
+  from = aws_ecs_task_definition.this
+  to   = aws_ecs_task_definition.this["app"]
+}
+
+moved {
+  from = aws_ecs_service.this
+  to   = aws_ecs_service.this["app"]
+}
+
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
   # ALB requires at least two subnets in different AZs.
@@ -170,6 +190,10 @@ resource "aws_lb_target_group" "this" {
   protocol    = "HTTP"
   target_type = "ip"
   vpc_id      = aws_vpc.this.id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   health_check {
     path                = each.value.health_check_path
