@@ -1,6 +1,6 @@
 # Terraform ECS Infrastructure on AWS
 
-This project provisions the underlying infrastructure to run a containerized application on Amazon ECS Fargate. It keeps application image build concerns out of scope, but includes a CodePipeline workflow to deploy infrastructure changes through Terraform.
+This project provisions the underlying infrastructure to run containerized applications on Amazon ECS with EC2 capacity (Auto Scaling Group + ECS capacity provider). It keeps application image build concerns out of scope, but includes a CodePipeline workflow to deploy infrastructure changes through Terraform.
 
 ## What it creates
 
@@ -8,8 +8,10 @@ This project provisions the underlying infrastructure to run a containerized app
 - Internet Gateway and public route table
 - Application Load Balancer with a single HTTP listener
 - ECS cluster with Container Insights enabled
+- ECS capacity provider backed by an EC2 Auto Scaling Group
 - One ECS task definition and one ECS service per configured service (one container per service)
 - IAM task execution role and task role
+- IAM role and instance profile for ECS EC2 instances
 - CloudWatch log group for container logs
 - CodeStar connection (or use an existing one) for GitHub source integration
 - CodePipeline + CodeBuild workflow that runs Terraform validate/plan/apply
@@ -74,9 +76,10 @@ This project provisions the underlying infrastructure to run a containerized app
 
 ## Variables
 
-- `services` configures one or more ECS services. Each service defines its own image, container port, desired count, health check settings, and ALB path routing.
 - `services` configures one or more ECS services. Each service defines its own image, container port, desired count, health check settings, and ALB routing using `path_pattern` or `host_headers`.
 - Legacy single-service variables (`container_image`, `container_port`, `desired_count`, `task_cpu`, `task_memory`) are still supported when `services` is empty.
+- `ecs_instance_type`, `ecs_asg_min_size`, `ecs_asg_max_size`, and `ecs_asg_desired_capacity` configure ECS EC2 capacity.
+- `ecs_capacity_provider_target_capacity` controls ECS managed scaling target utilization for the ASG capacity provider.
 - `repo_owner`, `repo_name`, and `repo_branch` configure the pipeline source.
 - `terraform_state_key` sets where pipeline Terraform state is stored in S3.
 
@@ -119,7 +122,7 @@ terraform destroy
 ## Notes
 
 - This stack exposes HTTP on port 80 through the ALB.
-- ECS tasks run in public subnets and are assigned public IPs.
+- ECS tasks run on ECS EC2 container instances in public subnets.
 - NAT gateways are not used in this sandbox configuration to reduce cost.
 - The stack does not build or publish container images; supply reachable image references in `services` (or `container_image` for legacy single-service mode).
 - The pipeline uses `buildspec-infra.yml` and executes Terraform apply from CodeBuild.

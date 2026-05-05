@@ -3,11 +3,6 @@ data "aws_availability_zones" "available" {
 }
 
 moved {
-  from = aws_security_group.service
-  to   = aws_security_group.service["app"]
-}
-
-moved {
   from = aws_lb_target_group.blue
   to   = aws_lb_target_group.this["app"]
 }
@@ -147,16 +142,15 @@ resource "aws_security_group" "alb" {
   }
 }
 
-resource "aws_security_group" "service" {
-  for_each    = local.service_definitions
-  name        = substr(replace("${local.name_prefix}-${each.key}-sg", "_", "-"), 0, 255)
-  description = "Security group for ECS service"
+resource "aws_security_group" "ecs_instances" {
+  name        = "${local.name_prefix}-ecs-instance-sg"
+  description = "Security group for ECS container instances"
   vpc_id      = aws_vpc.this.id
 
   ingress {
     description     = "Allow ALB traffic"
-    from_port       = each.value.container_port
-    to_port         = each.value.container_port
+    from_port       = 0
+    to_port         = 65535
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }
@@ -169,7 +163,7 @@ resource "aws_security_group" "service" {
   }
 
   tags = {
-    Name = "${local.name_prefix}-${each.key}-service-sg"
+    Name = "${local.name_prefix}-ecs-instance-sg"
   }
 }
 
@@ -190,7 +184,7 @@ resource "aws_lb_target_group" "this" {
   name        = substr(replace("${local.name_prefix}-${each.key}", "_", "-"), 0, 32)
   port        = each.value.container_port
   protocol    = "HTTP"
-  target_type = "ip"
+  target_type = "instance"
   vpc_id      = aws_vpc.this.id
 
   lifecycle {
@@ -293,6 +287,107 @@ resource "aws_iam_role" "ecs_task" {
   })
 }
 
+resource "aws_iam_role" "ecs_instance" {
+  name = "${local.name_prefix}-ecs-instance"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_instance" {
+  role       = aws_iam_role.ecs_instance.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+}
+
+resource "aws_iam_instance_profile" "ecs_instance" {
+  name = "${local.name_prefix}-ecs-instance-profile"
+  role = aws_iam_role.ecs_instance.name
+}
+
+data "aws_ssm_parameter" "ecs_ami" {
+  name = "/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id"
+}
+
+resource "aws_launch_template" "ecs" {
+  name_prefix   = "${local.name_prefix}-ecs-"
+  image_id      = data.aws_ssm_parameter.ecs_ami.value
+  instance_type = var.ecs_instance_type
+
+  iam_instance_profile {
+    arn = aws_iam_instance_profile.ecs_instance.arn
+  }
+
+  vpc_security_group_ids = [aws_security_group.ecs_instances.id]
+
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    echo ECS_CLUSTER=${aws_ecs_cluster.this.name} >> /etc/ecs/ecs.config
+  EOF
+  )
+}
+
+resource "aws_autoscaling_group" "ecs" {
+  name                = "${local.name_prefix}-ecs-asg"
+  min_size            = var.ecs_asg_min_size
+  max_size            = var.ecs_asg_max_size
+  desired_capacity    = var.ecs_asg_desired_capacity
+  vpc_zone_identifier = [for subnet in aws_subnet.public : subnet.id]
+  health_check_type   = "EC2"
+
+  launch_template {
+    id      = aws_launch_template.ecs.id
+    version = "$Latest"
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "${local.name_prefix}-ecs-instance"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "AmazonECSManaged"
+    value               = "true"
+    propagate_at_launch = true
+  }
+}
+
+resource "aws_ecs_capacity_provider" "this" {
+  name = "cp-${local.name_prefix}"
+
+  auto_scaling_group_provider {
+    auto_scaling_group_arn = aws_autoscaling_group.ecs.arn
+
+    managed_scaling {
+      status                    = "ENABLED"
+      target_capacity           = var.ecs_capacity_provider_target_capacity
+      minimum_scaling_step_size = 1
+      maximum_scaling_step_size = 4
+    }
+
+    managed_termination_protection = "DISABLED"
+  }
+}
+
+resource "aws_ecs_cluster_capacity_providers" "this" {
+  cluster_name       = aws_ecs_cluster.this.name
+  capacity_providers = [aws_ecs_capacity_provider.this.name]
+
+  default_capacity_provider_strategy {
+    capacity_provider = aws_ecs_capacity_provider.this.name
+    weight            = 1
+    base              = 1
+  }
+}
+
 resource "aws_ecs_cluster" "this" {
   name = "${local.name_prefix}-cluster"
 
@@ -305,10 +400,8 @@ resource "aws_ecs_cluster" "this" {
 resource "aws_ecs_task_definition" "this" {
   for_each                 = local.service_definitions
   family                   = substr(replace("${local.name_prefix}-${each.key}-task", "_", "-"), 0, 255)
-  cpu                      = tostring(each.value.task_cpu)
-  memory                   = tostring(each.value.task_memory)
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
+  network_mode             = "bridge"
+  requires_compatibilities = ["EC2"]
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
@@ -317,10 +410,12 @@ resource "aws_ecs_task_definition" "this" {
       name      = each.value.container_name
       image     = each.value.image
       essential = true
+      memory    = each.value.task_memory
+      cpu       = each.value.task_cpu
       portMappings = [
         {
           containerPort = each.value.container_port
-          hostPort      = each.value.container_port
+          hostPort      = 0
           protocol      = "tcp"
         }
       ]
@@ -342,13 +437,12 @@ resource "aws_ecs_service" "this" {
   cluster         = aws_ecs_cluster.this.id
   task_definition = aws_ecs_task_definition.this[each.key].arn
   desired_count   = each.value.desired_count
-  launch_type     = "FARGATE"
   health_check_grace_period_seconds = var.health_check_grace_period_seconds
 
-  network_configuration {
-    subnets          = [for subnet in aws_subnet.public : subnet.id]
-    security_groups  = [aws_security_group.service[each.key].id]
-    assign_public_ip = true
+  capacity_provider_strategy {
+    capacity_provider = aws_ecs_capacity_provider.this.name
+    weight            = 1
+    base              = 1
   }
 
   load_balancer {
@@ -357,7 +451,7 @@ resource "aws_ecs_service" "this" {
     container_port   = each.value.container_port
   }
 
-  depends_on = [aws_lb_listener.http]
+  depends_on = [aws_lb_listener.http, aws_ecs_cluster_capacity_providers.this]
 }
 
 resource "aws_codestarconnections_connection" "github" {

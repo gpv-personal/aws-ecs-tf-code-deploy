@@ -7,6 +7,11 @@ container_port  = 80
 task_cpu        = 256
 task_memory     = 512
 desired_count   = 2
+ecs_instance_type                     = "t3a.small"
+ecs_asg_min_size                      = 1
+ecs_asg_max_size                      = 4
+ecs_asg_desired_capacity              = 2
+ecs_capacity_provider_target_capacity = 100
 
 # Preferred model for multiple services: one container per ECS service.
 # You can remove this block and use container_image/container_port instead for a single-service setup.

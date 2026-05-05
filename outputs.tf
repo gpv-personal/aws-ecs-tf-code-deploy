@@ -23,6 +23,16 @@ output "alb_dns_name" {
   value       = aws_lb.this.dns_name
 }
 
+output "ecs_asg_name" {
+  description = "Auto Scaling Group name used by ECS capacity provider"
+  value       = aws_autoscaling_group.ecs.name
+}
+
+output "ecs_capacity_provider_name" {
+  description = "ECS capacity provider name backed by the Auto Scaling Group"
+  value       = aws_ecs_capacity_provider.this.name
+}
+
 output "codebuild_project_name" {
   description = "CodeBuild project name used for Terraform deployment"
   value       = aws_codebuild_project.terraform.name

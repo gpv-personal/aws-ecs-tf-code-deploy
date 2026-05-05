@@ -52,6 +52,36 @@ variable "desired_count" {
   default     = 2
 }
 
+variable "ecs_instance_type" {
+  description = "EC2 instance type for ECS container instances"
+  type        = string
+  default     = "t3a.small"
+}
+
+variable "ecs_asg_min_size" {
+  description = "Minimum number of ECS EC2 instances in the ASG"
+  type        = number
+  default     = 1
+}
+
+variable "ecs_asg_max_size" {
+  description = "Maximum number of ECS EC2 instances in the ASG"
+  type        = number
+  default     = 4
+}
+
+variable "ecs_asg_desired_capacity" {
+  description = "Desired number of ECS EC2 instances in the ASG"
+  type        = number
+  default     = 2
+}
+
+variable "ecs_capacity_provider_target_capacity" {
+  description = "Target utilization percentage for ECS managed scaling on the ASG capacity provider"
+  type        = number
+  default     = 100
+}
+
 variable "services" {
   description = "Map of ECS services to run; each entry creates one ECS service and one one-container task definition"
   type = map(object({
