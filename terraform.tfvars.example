@@ -15,13 +15,12 @@ services = {
 		image          = "public.ecr.aws/nginx/nginx:stable-alpine"
 		container_port = 80
 		desired_count  = 2
-		path_pattern   = "/*"
 	}
 	api = {
 		image             = "public.ecr.aws/docker/library/httpd:2.4"
 		container_port    = 80
 		desired_count     = 1
-		path_pattern      = "/api*"
+		host_headers      = ["api.localtest.me"]
 		listener_priority = 110
 	}
 }

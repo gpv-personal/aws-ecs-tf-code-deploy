@@ -64,6 +64,7 @@ variable "services" {
     health_check_path    = optional(string)
     health_check_matcher = optional(string)
     path_pattern         = optional(string)
+    host_headers         = optional(list(string))
     listener_priority    = optional(number)
   }))
   default = {}

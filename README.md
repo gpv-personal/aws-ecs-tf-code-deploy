@@ -75,6 +75,7 @@ This project provisions the underlying infrastructure to run a containerized app
 ## Variables
 
 - `services` configures one or more ECS services. Each service defines its own image, container port, desired count, health check settings, and ALB path routing.
+- `services` configures one or more ECS services. Each service defines its own image, container port, desired count, health check settings, and ALB routing using `path_pattern` or `host_headers`.
 - Legacy single-service variables (`container_image`, `container_port`, `desired_count`, `task_cpu`, `task_memory`) are still supported when `services` is empty.
 - `repo_owner`, `repo_name`, and `repo_branch` configure the pipeline source.
 - `terraform_state_key` sets where pipeline Terraform state is stored in S3.
@@ -94,10 +95,20 @@ To change deployed images for pipeline runs:
 ### Multiple services routing
 
 - One service is selected as the default ALB route.
-- Additional services are routed with listener rules using each service `path_pattern` and `listener_priority`.
-- Example: set `app` to `/*` and `api` to `/api*`.
+- Additional services are routed with listener rules using each service `listener_priority` plus either `path_pattern` or `host_headers`.
+- Path-based example: set `api` to `/api*`.
+- Host-based example: set `api` `host_headers` to `api.localtest.me`.
 - Use each service `container_port` for the port the container actually listens on (often `80` even when routed by `/api*` or `/copy*`).
 - Target group health checks run directly against the task IP and service port, not through ALB path-based routing rules.
+
+To test host-based routing with an ALB DNS name:
+
+1. Get ALB DNS from `terraform output alb_dns_name`.
+2. Send a request with the expected Host header.
+
+   Example:
+
+   `curl -H "Host: copy.localtest.me" http://<alb-dns-name>/`
 
 ## Cleanup
 

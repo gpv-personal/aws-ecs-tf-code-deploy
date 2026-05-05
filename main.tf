@@ -44,6 +44,7 @@ locals {
       health_check_path    = var.health_check_path
       health_check_matcher = var.health_check_matcher
       path_pattern         = "/*"
+      host_headers         = null
       listener_priority    = 100
     }
   }
@@ -60,7 +61,11 @@ locals {
       task_memory          = coalesce(try(service.task_memory, null), var.task_memory)
       health_check_path    = coalesce(try(service.health_check_path, null), var.health_check_path)
       health_check_matcher = coalesce(try(service.health_check_matcher, null), var.health_check_matcher)
-      path_pattern         = coalesce(try(service.path_pattern, null), service_name == "app" ? "/*" : "/${service_name}*")
+      host_headers         = try(service.host_headers, null)
+      path_pattern         = coalesce(
+        try(service.path_pattern, null),
+        try(service.host_headers, null) != null ? null : (service_name == "app" ? "/*" : "/${service_name}*")
+      )
       listener_priority    = coalesce(try(service.listener_priority, null), 100 + index(sort(keys(local.input_services)), service_name))
     }
   }
@@ -230,9 +235,23 @@ resource "aws_lb_listener_rule" "service" {
     target_group_arn = aws_lb_target_group.this[each.key].arn
   }
 
-  condition {
-    path_pattern {
-      values = [each.value.path_pattern]
+  dynamic "condition" {
+    for_each = each.value.path_pattern != null ? [1] : []
+
+    content {
+      path_pattern {
+        values = [each.value.path_pattern]
+      }
+    }
+  }
+
+  dynamic "condition" {
+    for_each = each.value.host_headers != null ? [1] : []
+
+    content {
+      host_header {
+        values = each.value.host_headers
+      }
     }
   }
 }
