@@ -95,6 +95,8 @@ To change deployed images for pipeline runs:
 - One service is selected as the default ALB route.
 - Additional services are routed with listener rules using each service `path_pattern` and `listener_priority`.
 - Example: set `app` to `/*` and `api` to `/api*`.
+- Use each service `container_port` for the port the container actually listens on (often `80` even when routed by `/api*` or `/copy*`).
+- Target group health checks run directly against the task IP and service port, not through ALB path-based routing rules.
 
 ## Cleanup
 

@@ -19,7 +19,7 @@ services = {
 	}
 	api = {
 		image             = "public.ecr.aws/docker/library/httpd:2.4"
-		container_port    = 8080
+		container_port    = 80
 		desired_count     = 1
 		path_pattern      = "/api*"
 		listener_priority = 110

@@ -9,7 +9,7 @@ services = {
 	}
 	copy = {
 		image             = "408921634707.dkr.ecr.eu-west-2.amazonaws.com/warwick:katwebsitecopy"
-		container_port    = 8080
+		container_port    = 80
 		desired_count     = 1
 		path_pattern      = "/copy*"
 		listener_priority = 110
