@@ -62,6 +62,7 @@ This project provisions the underlying infrastructure to run a containerized app
    ```
 
    The pipeline now fails fast when this state object is missing to prevent accidental recreation of existing resources.
+   Pipeline runs also upload Terraform state in a build finally step so partial applies are persisted when possible.
 
 7. If Terraform created the CodeStar connection (you left `codestar_connection_arn` empty), authorize it once in AWS Console:
 

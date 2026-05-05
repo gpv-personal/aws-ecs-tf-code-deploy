@@ -10,7 +10,7 @@ output "ecs_cluster_name" {
 
 output "ecs_service_name" {
   description = "Name of the primary ECS service (for backward compatibility)"
-  value       = aws_ecs_service.this[local.primary_service_name].name
+  value       = try(aws_ecs_service.this[local.primary_service_name].name, null)
 }
 
 output "ecs_service_names" {

@@ -29,7 +29,17 @@ phases:
       - terraform validate
       - terraform plan -input=false -var-file=terraform.pipeline.tfvars -out=tfplan
       - terraform apply -input=false -auto-approve tfplan
+    finally:
+      - |
+        if [ -f terraform.tfstate ]; then
+          aws s3 cp terraform.tfstate "s3://$TF_STATE_BUCKET/$TF_STATE_KEY"
+        else
+          echo "WARNING: terraform.tfstate not found; nothing to upload"
+        fi
+      - |
+        if [ -f terraform.tfstate.backup ]; then
+          aws s3 cp terraform.tfstate.backup "s3://$TF_STATE_BUCKET/${TF_STATE_KEY}.backup" || true
+        fi
   post_build:
     commands:
-      - aws s3 cp terraform.tfstate "s3://$TF_STATE_BUCKET/$TF_STATE_KEY"
-      - aws s3 cp terraform.tfstate.backup "s3://$TF_STATE_BUCKET/${TF_STATE_KEY}.backup" || true
+      - echo "Terraform run finished"
