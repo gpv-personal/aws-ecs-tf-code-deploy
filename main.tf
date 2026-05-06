@@ -184,7 +184,7 @@ resource "aws_lb_target_group" "this" {
   name        = substr(replace("${local.name_prefix}-${each.key}", "_", "-"), 0, 32)
   port        = each.value.container_port
   protocol    = "HTTP"
-  target_type = "instance"
+  target_type = "ip"
   vpc_id      = aws_vpc.this.id
 
   lifecycle {
@@ -400,7 +400,7 @@ resource "aws_ecs_cluster" "this" {
 resource "aws_ecs_task_definition" "this" {
   for_each                 = local.service_definitions
   family                   = substr(replace("${local.name_prefix}-${each.key}-task", "_", "-"), 0, 255)
-  network_mode             = "bridge"
+  network_mode             = "awsvpc"
   requires_compatibilities = ["EC2"]
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
@@ -415,7 +415,7 @@ resource "aws_ecs_task_definition" "this" {
       portMappings = [
         {
           containerPort = each.value.container_port
-          hostPort      = 0
+          hostPort      = each.value.container_port
           protocol      = "tcp"
         }
       ]
@@ -449,6 +449,12 @@ resource "aws_ecs_service" "this" {
     target_group_arn = aws_lb_target_group.this[each.key].arn
     container_name   = each.value.container_name
     container_port   = each.value.container_port
+  }
+
+  network_configuration {
+    subnets          = [for subnet in aws_subnet.public : subnet.id]
+    security_groups  = [aws_security_group.ecs_instances.id]
+    assign_public_ip = true
   }
 
   depends_on = [aws_lb_listener.http, aws_ecs_cluster_capacity_providers.this]
