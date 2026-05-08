@@ -1,6 +1,6 @@
 # Terraform ECS Infrastructure on AWS
 
-This project provisions the underlying infrastructure to run containerized applications on Amazon ECS with EC2 capacity (Auto Scaling Group + ECS capacity provider). It keeps application image build concerns out of scope, but includes a CodePipeline workflow to deploy infrastructure changes through Terraform.
+This project provisions the underlying infrastructure to run containerized applications on Amazon ECS with EC2 capacity (Auto Scaling Group + ECS capacity provider). It keeps application image build concerns out of scope and is intended to be applied by Terraform locally or from an external runner such as HCP Terraform.
 
 ## What it creates
 
@@ -13,16 +13,12 @@ This project provisions the underlying infrastructure to run containerized appli
 - IAM task execution role and task role
 - IAM role and instance profile for ECS EC2 instances
 - CloudWatch log group for container logs
-- CodeStar connection (or use an existing one) for GitHub source integration
-- CodePipeline + CodeBuild workflow that runs Terraform validate/plan/apply
-- S3 artifact bucket for CodePipeline
-- S3 bucket for pipeline-managed Terraform state snapshots
 
 ## Prerequisites
 
 - Terraform >= 1.5
 - AWS account and credentials configured
-- Permissions to create VPC, ECS, ELB, IAM, CloudWatch, CodeBuild, CodePipeline, CodeStar connections, and S3 resources
+- Permissions to create VPC, ECS, ELB, IAM, and CloudWatch resources
 
 ## Usage
 
@@ -56,23 +52,7 @@ This project provisions the underlying infrastructure to run containerized appli
    terraform output alb_dns_name
    ```
 
-6. Capture the initial local state into the pipeline state bucket (one-time bootstrap after first manual apply):
-
-   ```powershell
-   $bucket = terraform output -raw terraform_state_bucket_name
-   aws s3 cp terraform.tfstate "s3://$bucket/terraform/terraform.tfstate"
-   ```
-
-   The pipeline now fails fast when this state object is missing to prevent accidental recreation of existing resources.
-   Pipeline runs also upload Terraform state in a build finally step so partial applies are persisted when possible.
-
-7. If Terraform created the CodeStar connection (you left `codestar_connection_arn` empty), authorize it once in AWS Console:
-
-   - Open Developer Tools > Settings > Connections
-   - Find the connection output by Terraform
-   - Complete the GitHub handshake (status must become `AVAILABLE`)
-
-8. Trigger pipeline deployment by committing to the configured branch.
+When using HCP Terraform, configure your workspace variables (matching the Terraform inputs in this repo) and connect the workspace to this repository/branch in HCP.
 
 ## Variables
 
@@ -80,20 +60,6 @@ This project provisions the underlying infrastructure to run containerized appli
 - Legacy single-service variables (`container_image`, `container_port`, `desired_count`, `task_cpu`, `task_memory`) are still supported when `services` is empty.
 - `ecs_instance_type`, `ecs_asg_min_size`, `ecs_asg_max_size`, and `ecs_asg_desired_capacity` configure ECS EC2 capacity.
 - `ecs_capacity_provider_target_capacity` controls ECS managed scaling target utilization for the ASG capacity provider.
-- `repo_owner`, `repo_name`, and `repo_branch` configure the pipeline source.
-- `terraform_state_key` sets where pipeline Terraform state is stored in S3.
-
-### Changing images via CodePipeline
-
-CodePipeline does not use `terraform.tfvars` because that file is git-ignored.
-
-To change deployed images for pipeline runs:
-
-1. Update the `services` map in `terraform.pipeline.tfvars`.
-2. Commit and push the change.
-3. Run/release the pipeline.
-
-`buildspec-infra.yml` passes `-var-file=terraform.pipeline.tfvars` to Terraform plan/apply, so the image now comes from source control.
 
 ### Multiple services routing
 
@@ -125,4 +91,3 @@ terraform destroy
 - ECS tasks run on ECS EC2 container instances in public subnets.
 - NAT gateways are not used in this sandbox configuration to reduce cost.
 - The stack does not build or publish container images; supply reachable image references in `services` (or `container_image` for legacy single-service mode).
-- The pipeline uses `buildspec-infra.yml` and executes Terraform apply from CodeBuild.
