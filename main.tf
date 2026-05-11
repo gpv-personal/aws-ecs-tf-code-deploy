@@ -450,9 +450,8 @@ resource "aws_ecs_service" "this" {
   }
 
   network_configuration {
-    subnets          = [for subnet in aws_subnet.public : subnet.id]
-    security_groups  = [aws_security_group.ecs_instances.id]
-    assign_public_ip = true
+    subnets         = [for subnet in aws_subnet.public : subnet.id]
+    security_groups = [aws_security_group.ecs_instances.id]
   }
 
   depends_on = [aws_lb_listener.http, aws_ecs_cluster_capacity_providers.this]
